@@ -1,0 +1,52 @@
+Apache/Session/Manager version 0.02
+===================================
+
+Apache::Session::Manager provides a wrapper around Apache::Session which adds the following :
+
+  * Short term session tracking using cookies or URLs (query string / POST data rather than URL munging)
+  * Long term user tracking with cookies and query string
+  * User recognition through query string
+  * Login, logout, create new account, remove cookies - all operating with your favourite database and schema!
+
+It needs to be subclassed by your own module, which provides the methods to interact 
+with your database - ie you can integrate this module into you own database schema.
+
+Apache::Session::Manager is not a "drop in" module - it requires a bit of work on your part to make
+ it work - but once that work is done, it makes a lot of user and session management easy.  Any 
+website that wants to have any sort of long term relationship with a user needs to be able to track a 
+user through a session, allow the user to register, and issue them with a password challenge
+before allowing them to view restricted pages... which is exactly what this module does.
+
+All you need to provide is 6 subroutines which speak to your database to perform a few simple 
+functions (looking up a username etc).
+
+
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+ * perl 5.8
+ * mod_perl 1.27
+ * Apache::Cookie 1.0
+ * Apache::Request 1.0
+ * Apache::Session 1.54
+ * Digest::MD5 2.20
+
+It may work with earlier versions of the above, but I haven't tried it.
+
+COPYRIGHT AND LICENCE
+
+Copyright 2002 by Clinton Gormley
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself. 
