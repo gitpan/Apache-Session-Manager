@@ -1,5 +1,12 @@
 Revision history for Perl extension Apache::Session::Manager.
 
+0.03 Sat Nov 16 16:41
+* Method logged_in became request_logged_in
+* Added method session_logged_in
+* Added call to load_session() - can be overriden by the user to restore a saved session.  Not required.
+* Fixed Cookie_Expiry bug ('1y' should have been '+1y')
+* Added is_registered method
+
 0.02  Sat Nov 16 10:20:46 2002
 	- original version; created by h2xs 1.22 with options
 		-XA -n Apache::Session::Manager

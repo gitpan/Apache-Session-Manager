@@ -10,13 +10,13 @@ use Apache::Session::Flex();
 use Apache::Cookie();
 use Digest::MD5 qw(md5_hex);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 
 #============================ Set class variables  and constants ==========================================
 
-use constant DEBUG => 8;													# DEBUG = 0 means debug code doesn't get compiled
-use Data::Dumper;
+use constant DEBUG => 0;													# DEBUG = 0 means debug code doesn't get compiled
+#use Data::Dumper;
 
 use constant NOCOOKIES => 0;											# Defines constants to represent which cookies to bake
 use constant COOKIES => 1;
@@ -31,7 +31,7 @@ my %Config = (
 	Session_Mngr			=> undef,											# Will hold Apache::Session::Flex manager details;
 	Session_Expiry			=> 60*15,											# Default session inactivity time = 15 minutes
 	Cookie_Domain 			=> '',													# Domain for which cookies will be served
-	Cookie_Expiry 			=> '1y',												# Domain for which cookies will be served
+	Cookie_Expiry 			=> '+1y',												# Domain for which cookies will be served
 	Hash_Length 			=> 16, 												# Length of MD5 hash for SID and Secure ID
 	Secret_User_Key		=> undef,											# This must be defined (pref at server startup) otherwise won't be able to recognise returning visitors
 	UID_Tries					=> 20,												# Number of new UIDs that will be tried before the routine gives up
@@ -105,6 +105,12 @@ sub _setup_session {																# Setup session for this request
 	DEBUG > 0 && print STDERR "\n*** ARM : 3 timestamping session";
 
 	$self->_timestamp_session();
+
+	DEBUG > 0 && print STDERR "\n*** ARM : 3a going to load session";
+
+	$self->session->{username} = 
+		$self->load_session($session->{UID});
+
 	return 1;
 }
 
@@ -317,14 +323,12 @@ sub _login_UID {																										# Logs user in for passed through UID
 	}
 
 	DEBUG > 0 && print STDERR "\n*** ARM : 37 Setting logged in";
-	$self->logged_in(1);																								# Set logged in flag, = user logged in for this request 
+	$self->request_logged_in(1);																								# Set logged in flag, = user logged in for this request 
 	DEBUG > 0 && print STDERR "\n*** ARM : 38 Adding hashed_secure_ID to session";
 	$self->session->{'_sh'} = $self->_get_hashed_secure_ID;												# Set hashed_sh so that we know user has logged in for this session
 	DEBUG > 0 && print STDERR "\n*** ARM : 39 Setting cookies to bake";
 	$self->_cookies_to_bake(SECURE_COOKIES);														# Set to send secure cookies
 
-#####Don't think we need this line - should be handled by _init_new_session called above
-#	$self->_cookies_to_bake(COOKIES);
 
 	return $self->_value('UID');																						# return UID of logged in account
 }
@@ -338,7 +342,7 @@ sub logout	{																												# Log out current UID
 	DEBUG > 0 && print STDERR "\n*** ARM  : 41 Removing secure has from session";
 	$self->session->{'_sh'} = '';																							# Remove logged in hash from session
 	DEBUG > 0 && print STDERR "\n*** ARM  : 42 Setting logged in to 0";
-	$self->logged_in(0);																								# set logged_in to 0
+	$self->request_logged_in(0);																								# set logged_in to 0
 	DEBUG > 0 && print STDERR "\n*** ARM  : 43 Expiring session";
 	$self->_expire_session($self->_value('session'));														# expire session
 	DEBUG > 0 && print STDERR "\n*** ARM  : 44 Getting new session from source and setting it up";
@@ -450,6 +454,17 @@ sub check_username_available {															## MUST BE OVERRIDDEN ##
 	warnings::warn("The method : check_username_available must be overridden");
 }
 
+#===================================
+sub load_session {																				## MUST BE OVERRIDDEN ##
+#===================================
+	# Params : $UID
+	# Action : Use this to check whether this UID already has a username
+	# and to load any session data (eg name)
+	# Returns : Username if found, blank if not found
+	DEBUG > 0 && print STDERR "\n*** ARM  : 56b Shouldn't get here - this method should be overwritten!!!";
+	warnings::warn("The method : load_session must be overridden");
+}
+
 ###############################################################################
 
 
@@ -477,22 +492,37 @@ sub _check_logged_in {																	# Is the user logged in for this request
 	my $sh = $self->_retrieve_id_cookie_first('_sh');								# Look for secure hash, first from cookie then post data
 	if ($sh && $sh eq $self->session->{'_sh'}) {										# If the retrieved secure hash = the one in session ....
 		DEBUG > 0 && print STDERR "\n*** ARM  : 60 Setting to logged in";
-		$self->logged_in(1);																# Logged in for this request
+		$self->request_logged_in(1);																# Logged in for this request
 	} else {
-		$self->logged_in(0);																# otherwise not
+		$self->request_logged_in(0);																# otherwise not
 	}
 }
 
 
 #===================================
-sub logged_in {																				# Gets/Sets the login flag ie is the user logged in for this request
+sub request_logged_in {																				# Gets/Sets the login flag ie is the user logged in for this request
 #===================================
 	my $self = shift;
 	return $self->_value('logged_in' => shift) || 0;
 }
 
 #===================================
-sub _retrieve_id_param_first {															# Look for a parameter first from query string/post data then from cookies
+sub session_logged_in {																				# Has this session ever logged in?
+#===================================
+	my $self = shift;
+	return (exists $self->session->{'_sh'} && $self->session->{'_sh'});				# Is true if the session secure hash flag is true
+}
+
+#===================================
+sub is_registered {																						# Has this UID got an associated username ie registered account
+#===================================
+	my $self = shift;																						# If so, returns the username
+	if (exists $self->session->{'username'}) {
+		return $self->session->{'username'}}
+	return undef;
+}
+
+sub _retrieve_id_param_first {																		# Look for a parameter first from query string/post data then from cookies
 #===================================
 	my $self = shift;
 	my $param = shift;
@@ -542,7 +572,7 @@ sub _check_hashed_identifier {															# Check if a hashed SID / UID is co
 sub _get_hashed_secure_ID {															# Generates, stores and returns a secure hashed id based on the current SID
 #===================================
 	my $self = shift;
-	return unless $self->logged_in;
+	return unless $self->request_logged_in;
 	$self->_value('_sh' =>																	# Generates hash unless already generated
 			$self->_generate_hash(
 					$self->_get_secret_key('_sh')
@@ -615,6 +645,7 @@ sub bake_cookies {																						# Add relevant cookies to headers out
 	my $self = shift;
 	my $remember_me = $self->remember_me();												# Should the user's computer remember him or just use session cookies?
 	my $cookies_to_bake = $self->_cookies_to_bake;										# Which cookies to send?
+	
 
 	DEBUG > 0 && print STDERR "\n*** ARM : 61 cookies_to_bake = $cookies_to_bake";
 
@@ -622,7 +653,7 @@ sub bake_cookies {																						# Add relevant cookies to headers out
 		Apache::Cookie->new($self->request,
 			-name		=>	'UID',
 			-value		=>	$self->_get_hashed_ID('UID'),
-			-expires		=>	$remember_me ? $self->config('Cookie_Expiry') : '',		# Remember user after this session?
+			-expires		=>	($remember_me ? $self->config('Cookie_Expiry') : ''),		# Remember user after this session?
 			-domain		=>	$self->config('Cookie_Domain'),
 			-path			=>	'/',
 			-secure		=>	0
@@ -868,7 +899,10 @@ with your own module (YourModule), and override the methods to do the database s
 	$string = $mgr->getUID();
 	$string = $mgr->get_sh();
 
-	$bool = $mgr->logged_in();
+	$bool = $mgr->request_logged_in();
+	$bool = $mgr->session_logged_in();
+
+	$string = $mgr->is_registered( )
 
 	$bool = $mgr->cookies_enabled();
 
@@ -1053,17 +1087,27 @@ passed in the cookie.
 =item $mgr->get_sh( )
 
 Returns the current hashed secure session ID, which is in a form that can be passed to users - ie the same thing that gets 
-passed in the cookie. If $mgr->logged_in() is false, then this returns C<undef> instead.
+passed in the cookie. If $mgr->request_logged_in() is false, then this returns C<undef> instead.
 
 
 
-=item $mgr->logged_in( )
+=item $mgr->request_logged_in( )
 
 A flag indicating whether the user is logged on for this request or not .  A true value
 indicates that they have returned the secure hash either 
 via a secure cookie or in POST data from a secure form (the implementation of which is up to you - 
 see L</"WHAT TO DO WHEN COOKIES ARE DISABLED?">
 
+
+=item $mgr->session_logged_in( )
+
+A flag indicating whether the user has logged in during this session or not.  Can be allowed
+to access pages which are not quite as senstive but do require some identification.
+
+=item $mgr->is_registered( )
+
+If the current UID has an associated username, returns true (ie this account is registered).  In fact, 
+it returns the user name.
 
 =item $mgr->cookies_enabled( )
 
@@ -1364,6 +1408,26 @@ Create your module along these lines :
 		return $UID;
 	}
 
+
+	sub load_session {
+	#===================================
+		# Params : $UID
+		# Action : Loads a session including (mandatory) username
+		# Returns : username if exists, otherwise blank
+		# Anything that needs to be loaded and added to session can go in your overriding method
+		# example SQL :
+
+		SELECT username,name
+		FROM database.user u
+		WHERE u.UID = ?
+
+		$mgr->session->{name} = $result->{name};
+		return $result->{username}
+		
+	}
+
+
+
 	1;
 	__END__
 	==================================
@@ -1439,7 +1503,7 @@ The hash is of the form:
     	  $r->pnotes('manager'=>$mgr);
 
     	  # If needs to be logged in to view this page, and isn't logged in...
-    	  if ($url->{must_login} && ! $mgr->logged_in) {
+    	  if ($url->{must_login} && ! $mgr->request_logged_in) {
             # Get a secure page for login
             return redirect_secure($r) if  !$SSL;
             $r->push_handlers(PerlHandler => 'Apache::YourLogin');
@@ -1689,4 +1753,26 @@ Copyright 2002 by Clinton Gormley
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 
 
+=head1 TODO
+
+=over 4
+
+=item Test suite
+
+=item Sticky sessions with mod_backhand
+
+=item You tell me!
+
+=back
+
+
+=head1 CHANGES
+
+=head2 Version 0.03
+
+* Method logged_in became request_logged_in
+* Added method session_logged_in
+* Added call to load_session() - can be overriden by the user to restore a saved session.  Not required.
+* Fixed Cookie_Expiry bug ('1y' should have been '+1y')
+* Added is_registered method
 =cut
